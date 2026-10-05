@@ -104,6 +104,7 @@
       tbody.innerHTML = r.items.length
         ? r.items.map((x) => {
             const h = x.highlight || {};
+            h.diagnosis_awal = h.diagnosis_awal || h["diagnosis_awal.plain"];
             return `<tr>
               <td>${fmtDate(x.tanggal_kunjungan)}<br><small>${esc(x.no_kunjungan)}</small></td>
               <td>${h.nama_pasien ? safeHighlight(h.nama_pasien[0]) : esc(x.nama_pasien)}<br><small>${esc(x.no_kartu)} · ${esc(x.jenis_kelamin)} · ${x.umur ?? "-"} th</small></td>

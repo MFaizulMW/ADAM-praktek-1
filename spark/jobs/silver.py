@@ -126,7 +126,7 @@ def transform_peserta(df: DataFrame) -> DataFrame:
         F.trim("no_kartu").alias("no_kartu"),
         # masking PII: 6 digit awal (kode wilayah) dipertahankan untuk analitik
         F.concat(F.substring("nik", 1, 6), F.lit("**********")).alias("nik_masked"),
-        F.initcap(_clean_text(F.col("nama"))).alias("nama"),
+        _clean_text(F.col("nama")).alias("nama"),   # tanpa initcap: menjaga gelar (S.Psi, R.M.)
         tgl_lahir.alias("tanggal_lahir"),
         F.upper(F.trim("jenis_kelamin")).alias("jenis_kelamin"),
         F.when(F.upper(F.trim("jenis_kelamin")) == "L", "Laki-laki")
@@ -154,7 +154,7 @@ def transform_kunjungan(df: DataFrame) -> DataFrame:
         tgl.alias("tanggal_kunjungan"),
         F.to_date(tgl).alias("tanggal"),
         F.date_format(tgl, "yyyy-MM").alias("periode"),
-        F.initcap(_clean_text(F.col("poli"))).alias("poli"),
+        _clean_text(F.col("poli")).alias("poli"),   # tanpa initcap: menjaga singkatan (KIA, THT)
         _clean_text(F.col("jenis_kunjungan")).alias("jenis_kunjungan"),
         diagnosis.alias("diagnosis_awal"),
         # versi ternormalisasi untuk text mining (word cloud)

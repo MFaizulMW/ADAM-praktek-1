@@ -67,7 +67,11 @@ KUNJUNGAN_INDEX = {
             "poli": {"type": "keyword"},
             "jenis_kunjungan": {"type": "keyword"},
             "status": {"type": "keyword"},
-            "diagnosis_awal": {"type": "text", "analyzer": "diagnosis_analyzer"},
+            "diagnosis_awal": {
+                "type": "text", "analyzer": "diagnosis_analyzer",
+                # tanpa stemming: typo seperti "berdrah" tetap dekat ke "berdarah"
+                "fields": {"plain": {"type": "text", "analyzer": "name_analyzer"}},
+            },
             "peserta_id": {"type": "long"},
             "no_kartu": {"type": "keyword"},
             "nama_pasien": {

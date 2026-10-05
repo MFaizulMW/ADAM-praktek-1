@@ -15,10 +15,10 @@ from ..schemas import KunjunganIn
 router = APIRouter(prefix="/api/kunjungan", tags=["kunjungan"])
 
 SEARCH_FIELDS = {
-    "semua": ["nama_pasien^3", "nama_faskes^2", "diagnosis_awal"],
+    "semua": ["nama_pasien^3", "nama_faskes^2", "diagnosis_awal", "diagnosis_awal.plain"],
     "pasien": ["nama_pasien"],
     "faskes": ["nama_faskes"],
-    "diagnosis": ["diagnosis_awal"],
+    "diagnosis": ["diagnosis_awal", "diagnosis_awal.plain"],
 }
 
 
@@ -61,13 +61,19 @@ def search_kunjungan(
     filters = [{"term": {"poli": poli}}] if poli else []
 
     if q and q.strip():
+        text = q.strip()
+        fields = SEARCH_FIELDS[field]
         must = [{
-            "multi_match": {
-                "query": q.strip(),
-                "fields": SEARCH_FIELDS[field],
-                "type": "bool_prefix",        # mendukung ketik sebagian: "sit" -> "Siti"
-                "fuzziness": "AUTO",          # toleran salah ketik
-                "operator": "and",
+            "bool": {
+                "should": [
+                    # toleran salah ketik di semua kata: "demam berdrah" -> "demam berdarah"
+                    {"multi_match": {"query": text, "fields": fields, "type": "best_fields",
+                                     "fuzziness": "AUTO", "operator": "and"}},
+                    # ketik sebagian (kata terakhir sebagai prefix): "sit" -> "Siti"
+                    {"multi_match": {"query": text, "fields": fields, "type": "bool_prefix",
+                                     "operator": "and"}},
+                ],
+                "minimum_should_match": 1,
             }
         }]
         sort = ["_score", {"tanggal_kunjungan": "desc"}]
@@ -84,7 +90,9 @@ def search_kunjungan(
         track_total_hits=True,
         highlight={
             "pre_tags": ["<mark>"], "post_tags": ["</mark>"],
-            "fields": {"nama_pasien": {}, "nama_faskes": {}, "diagnosis_awal": {"number_of_fragments": 0}},
+            "fields": {"nama_pasien": {}, "nama_faskes": {},
+                       "diagnosis_awal": {"number_of_fragments": 0},
+                       "diagnosis_awal.plain": {"number_of_fragments": 0}},
         },
         aggs={"poli": {"terms": {"field": "poli", "size": 30}}},
     )
