@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+
+# kredensial lokal — pakai .env.example sebagai template
+.env

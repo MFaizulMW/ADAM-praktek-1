@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BPJS Kesehatan — Beranda</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <span class="brand">BPJS Kesehatan · Big Data</span>
+    <nav>
+      <a href="index.html">Beranda</a>
+      <a href="peserta.html">Peserta</a>
+      <a href="faskes.html">Faskes</a>
+      <a href="kunjungan.html">Kunjungan</a>
+      <a href="dashboard.html">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Status Platform</h1>
+    <p class="subtitle">Kesehatan read replica PostgreSQL dan kesegaran layer gold di Elasticsearch.</p>
+
+    <div class="grid grid-2">
+      <section class="card">
+        <h2>Replikasi PostgreSQL <span class="badge">primary → replica</span></h2>
+        <div id="repl" class="empty">Memuat…</div>
+      </section>
+      <section class="card">
+        <h2>Layer Gold <span class="badge">Elasticsearch</span></h2>
+        <div id="gold" class="empty">Memuat…</div>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Alur Data</h2>
+      <div class="arch">FE (HTML) ──► BE FastAPI/uvicorn ──write──► PostgreSQL PRIMARY ──WAL stream──► READ REPLICA ◄──read── BE
+                         │                          │
+                         │                          └─ logical decoding (pgoutput) ─► Debezium ─► Kafka (bpjs.public.*)
+                         │                                                                          │
+                         │                                       Spark Structured Streaming ◄───────┘
+                         │                                                  │
+                         │                     MinIO  lakehouse/bronze  (raw CDC event, parquet, append-only)
+                         │                                                  │  Spark batch (dedup, clean, mask PII)
+                         │                     MinIO  lakehouse/silver  (state terkini per tabel, parquet)
+                         │                                                  │  Spark batch (join, agregasi, text mining)
+                         │                     MinIO  lakehouse/gold    (parquet)  +  Elasticsearch (serving)
+                         │                                                                          │
+                         └──────────── search & dashboard ◄─────────────────────────────────────────┘</div>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    async function loadRepl() {
+      const el = document.getElementById("repl");
+      try {
+        const r = await API.get("/system/replication");
+        const s = r.primary_senders;
+        const rep = r.replica;
+        el.className = "";
+        el.innerHTML = `
+          <div class="table-wrap"><table>
+            <tr><th>Replica</th><th>State</th><th>Sync</th><th class="num">Lag (byte)</th><th class="num">Replay lag (dtk)</th></tr>
+            ${s.length ? s.map((x) => `<tr><td>${esc(x.client_addr)}</td><td>${esc(x.state)}</td><td>${esc(x.sync_state)}</td>
+               <td class="num">${fmtNum(x.lag_bytes)}</td><td class="num">${x.replay_lag_seconds == null ? "0" : x.replay_lag_seconds.toFixed(3)}</td></tr>`).join("")
+               : `<tr><td colspan="5" class="empty">Tidak ada replica terhubung</td></tr>`}
+          </table></div>
+          <p class="msg">Replica in_recovery: <b>${rep.in_recovery}</b> · replay LSN ${esc(rep.replay_lsn)} · transaksi terakhir ${fmtDate(rep.last_replay_at)}</p>
+          <div class="table-wrap"><table>
+            <tr><th>Slot</th><th>Tipe</th><th>Aktif</th><th class="num">WAL tertahan (byte)</th></tr>
+            ${r.replication_slots.map((x) => `<tr><td>${esc(x.slot_name)}</td><td>${esc(x.slot_type)}</td><td>${x.active ? "ya" : "tidak"}</td><td class="num">${fmtNum(x.retained_bytes)}</td></tr>`).join("")}
+          </table></div>`;
+      } catch (e) {
+        el.textContent = "Gagal memuat: " + e.message;
+      }
+    }
+
+    async function loadGold() {
+      const el = document.getElementById("gold");
+      try {
+        const r = await API.get("/system/gold");
+        el.className = "";
+        el.innerHTML = `<div class="table-wrap"><table>
+          <tr><th>Alias</th><th>Index aktif</th><th class="num">Dokumen</th></tr>
+          ${r.items.map((x) => `<tr><td>${esc(x.alias)}</td><td>${x.index ? esc(x.index) : '<span class="badge">belum dipublikasi</span>'}</td><td class="num">${fmtNum(x.docs)}</td></tr>`).join("")}
+        </table></div>
+        <p class="msg">Suffix <code>_vYYYYMMDDHHMMSS</code> = waktu publikasi terakhir pipeline Spark.</p>`;
+      } catch (e) {
+        el.textContent = "Gagal memuat: " + e.message;
+      }
+    }
+
+    loadRepl(); loadGold();
+    setInterval(() => { loadRepl(); loadGold(); }, 5000);
+  </script>
+</body>
+</html>

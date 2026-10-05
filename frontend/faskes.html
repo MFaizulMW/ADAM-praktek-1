@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BPJS Kesehatan — Faskes</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <span class="brand">BPJS Kesehatan · Big Data</span>
+    <nav>
+      <a href="index.html">Beranda</a>
+      <a href="peserta.html">Peserta</a>
+      <a href="faskes.html">Faskes</a>
+      <a href="kunjungan.html">Kunjungan</a>
+      <a href="dashboard.html">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Fasilitas Kesehatan</h1>
+    <p class="subtitle">Tulis ke <b>primary</b>, daftar dibaca dari <b>read replica</b>.</p>
+
+    <section class="card">
+      <h2>Tambah Faskes</h2>
+      <form id="f" class="form">
+        <label>Kode Faskes <input name="kode_faskes" required maxlength="12" /></label>
+        <label>Nama <input name="nama" required /></label>
+        <label>Jenis
+          <select name="jenis" required>
+            <option>Puskesmas</option><option>Klinik Pratama</option>
+            <option>Dokter Praktik Perorangan</option><option>Rumah Sakit</option>
+          </select>
+        </label>
+        <label>Tingkat
+          <select name="tingkat" required><option>FKTP</option><option>FKRTL</option></select>
+        </label>
+        <label>Kota <input name="kota" required /></label>
+        <label>Provinsi <input name="provinsi" required /></label>
+        <label class="full">Alamat <input name="alamat" /></label>
+        <div class="full"><button type="submit">Simpan</button><div id="msg" class="msg"></div></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="searchbar">
+        <input type="search" id="q" placeholder="Cari nama / kode / kota…" />
+        <span class="badge" id="total"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Kode</th><th>Nama</th><th>Jenis</th><th>Tingkat</th><th>Kota</th><th>Provinsi</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    const rows = document.getElementById("rows");
+    async function load() {
+      const r = await API.get("/faskes", { q: document.getElementById("q").value, limit: 100 });
+      document.getElementById("total").textContent = `${fmtNum(r.total)} faskes · sumber: ${r.source}`;
+      rows.innerHTML = r.items.length
+        ? r.items.map((x) => `<tr><td>${esc(x.kode_faskes)}</td><td>${esc(x.nama)}</td><td>${esc(x.jenis)}</td>
+            <td>${esc(x.tingkat)}</td><td>${esc(x.kota)}</td><td>${esc(x.provinsi)}</td></tr>`).join("")
+        : `<tr><td colspan="6" class="empty">Belum ada data</td></tr>`;
+    }
+    let t;
+    document.getElementById("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(load, 300); });
+
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      try {
+        const r = await API.post("/faskes", formData(e.target));
+        setMsg(msg, `Tersimpan (id ${r.item.id}) di ${r.source}`);
+        e.target.reset();
+        setTimeout(load, 300); // beri waktu replikasi (biasanya < 100 ms)
+      } catch (err) { setMsg(msg, err.message, false); }
+    });
+    load();
+  </script>
+</body>
+</html>

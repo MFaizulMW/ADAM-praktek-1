@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BPJS Kesehatan — Dashboard</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/wordcloud@1.2.2/src/wordcloud2.js"></script>
+</head>
+<body>
+  <header class="nav">
+    <span class="brand">BPJS Kesehatan · Big Data</span>
+    <nav>
+      <a href="index.html">Beranda</a>
+      <a href="peserta.html">Peserta</a>
+      <a href="faskes.html">Faskes</a>
+      <a href="kunjungan.html">Kunjungan</a>
+      <a href="dashboard.html">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Dashboard Kunjungan</h1>
+    <p class="subtitle">Data mart layer <b>gold</b> (Elasticsearch) · diperbarui <span id="generated">—</span> · auto-refresh 30 detik</p>
+
+    <div class="grid grid-4">
+      <div class="card stat"><div class="label">Total kunjungan</div><div class="value" id="kpiKunjungan">—</div></div>
+      <div class="card stat"><div class="label">Pasien berkunjung</div><div class="value" id="kpiPasien">—</div></div>
+      <div class="card stat"><div class="label">Total peserta</div><div class="value" id="kpiPeserta">—</div></div>
+      <div class="card stat"><div class="label">Total faskes</div><div class="value" id="kpiFaskes">—</div></div>
+    </div>
+
+    <div class="grid grid-2">
+      <section class="card">
+        <h2>Kunjungan per poli</h2>
+        <div class="chart-box"><canvas id="chartPoli" aria-label="Grafik batang jumlah kunjungan per poli" role="img"></canvas></div>
+        <details class="table-view"><summary>Lihat tabel</summary><div class="table-wrap" id="tablePoli"></div></details>
+      </section>
+
+      <section class="card">
+        <h2>15 faskes dengan kunjungan terbanyak</h2>
+        <div class="chart-box tall"><canvas id="chartFaskes" aria-label="Grafik batang horizontal jumlah kunjungan per faskes" role="img"></canvas></div>
+        <details class="table-view"><summary>Lihat tabel</summary><div class="table-wrap" id="tableFaskes"></div></details>
+      </section>
+    </div>
+
+    <section class="card" style="position:relative">
+      <h2>Word cloud diagnosis awal</h2>
+      <canvas id="wordcloud" role="img" aria-label="Word cloud kata yang paling sering muncul pada diagnosis awal"></canvas>
+      <p class="empty" id="wcEmpty" hidden>Belum ada data</p>
+      <div class="wc-tip" id="wcTip"></div>
+      <details class="table-view"><summary>Lihat tabel</summary><div class="table-wrap" id="tableWc"></div></details>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    const charts = {};
+    let lastData = null;
+
+    function barChart(id, labels, values, horizontal) {
+      charts[id]?.destroy();
+      const grid = cssVar("--grid"), muted = cssVar("--muted"), text2 = cssVar("--text-2");
+      const valueAxis = { beginAtZero: true, grid: { color: grid }, border: { display: false },
+                          ticks: { color: muted, precision: 0 } };
+      const catAxis = { grid: { display: false }, border: { color: cssVar("--axis") },
+                        ticks: { color: text2, autoSkip: false } };
+      charts[id] = new Chart(document.getElementById(id), {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Jumlah kunjungan",
+            data: values,
+            backgroundColor: cssVar("--series-1"),
+            borderRadius: 4,
+            borderSkipped: "start",        // hanya ujung data yang membulat
+            maxBarThickness: 28,
+            categoryPercentage: 0.85,
+            barPercentage: 0.9,
+          }],
+        },
+        options: {
+          indexAxis: horizontal ? "y" : "x",
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: "nearest", axis: horizontal ? "y" : "x", intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (c) => ` ${fmtNum(c.parsed[horizontal ? "x" : "y"])} kunjungan` } },
+          },
+          scales: horizontal ? { x: valueAxis, y: catAxis } : { x: { ...catAxis, ticks: { ...catAxis.ticks, maxRotation: 45 } }, y: valueAxis },
+        },
+      });
+    }
+
+    function table(el, headers, rows) {
+      document.getElementById(el).innerHTML = `<table><thead><tr>${headers.map((h, i) =>
+        `<th class="${i ? "num" : ""}">${h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) =>
+        `<tr>${r.map((c, i) => `<td class="${i ? "num" : ""}">${i ? fmtNum(c) : esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    }
+
+    function drawWordcloud(items) {
+      const el = document.getElementById("wordcloud");
+      const tip = document.getElementById("wcTip");
+      document.getElementById("wcEmpty").hidden = items.length > 0;
+      el.hidden = !items.length;
+      if (!items.length) return;
+      const dpr = window.devicePixelRatio || 1;
+      el.width = el.clientWidth * dpr;
+      el.height = el.clientHeight * dpr;
+      const max = items[0].frekuensi, min = items.at(-1).frekuensi;
+      const ramp = ["--seq-400", "--seq-500", "--seq-600", "--seq-700"].map(cssVar);   // sequential: makin gelap = makin sering
+      const scale = (f) => (max === min ? 1 : (f - min) / (max - min));
+      const freq = new Map(items.map((x) => [x.term, x.frekuensi]));
+      WordCloud(el, {
+        list: items.map((x) => [x.term, x.frekuensi]),
+        weightFactor: (f) => (14 + 46 * Math.sqrt(scale(f))) * dpr,
+        fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+        fontWeight: 600,
+        color: (w, f) => ramp[Math.min(3, Math.floor(scale(f) * 4))],
+        backgroundColor: "transparent",
+        rotateRatio: 0,
+        gridSize: Math.round(8 * dpr),
+        shuffle: false,
+        hover: (item, dim, ev) => {
+          if (!item) { tip.style.display = "none"; return; }
+          tip.textContent = `${item[0]} · ${fmtNum(freq.get(item[0]))}×`;
+          const parent = el.parentElement.getBoundingClientRect();
+          tip.style.left = `${ev.clientX - parent.left + 12}px`;
+          tip.style.top = `${ev.clientY - parent.top + 12}px`;
+          tip.style.display = "block";
+        },
+      });
+      el.addEventListener("mouseleave", () => (tip.style.display = "none"), { once: true });
+    }
+
+    function render(d) {
+      const { ringkasan, poli, faskes, wc } = d;
+      document.getElementById("kpiKunjungan").textContent = fmtNum(ringkasan.total_kunjungan);
+      document.getElementById("kpiPasien").textContent = fmtNum(ringkasan.total_pasien_berkunjung);
+      document.getElementById("kpiPeserta").textContent = fmtNum(ringkasan.total_peserta);
+      document.getElementById("kpiFaskes").textContent = fmtNum(ringkasan.total_faskes);
+      document.getElementById("generated").textContent = ringkasan.generated_at ? fmtDate(ringkasan.generated_at) : "belum ada";
+
+      barChart("chartPoli", poli.items.map((x) => x.poli), poli.items.map((x) => x.jumlah_kunjungan), false);
+      table("tablePoli", ["Poli", "Kunjungan", "Pasien unik"],
+            poli.items.map((x) => [x.poli, x.jumlah_kunjungan, x.jumlah_pasien_unik]));
+
+      barChart("chartFaskes", faskes.items.map((x) => x.nama_faskes), faskes.items.map((x) => x.jumlah_kunjungan), true);
+      table("tableFaskes", ["Faskes", "Kunjungan", "Pasien unik"],
+            faskes.items.map((x) => [`${x.nama_faskes} (${x.kota})`, x.jumlah_kunjungan, x.jumlah_pasien_unik]));
+
+      drawWordcloud(wc.items);
+      table("tableWc", ["Kata", "Frekuensi"], wc.items.slice(0, 50).map((x) => [x.term, x.frekuensi]));
+    }
+
+    async function load() {
+      try {
+        const [ringkasan, poli, faskes, wc] = await Promise.all([
+          API.get("/dashboard/ringkasan"),
+          API.get("/dashboard/per-poli"),
+          API.get("/dashboard/per-faskes", { top: 15 }),
+          API.get("/dashboard/wordcloud", { top: 100 }),
+        ]);
+        const next = { ringkasan, poli, faskes, wc };
+        // hanya render ulang bila layer gold berubah (hindari word cloud 'berkedip')
+        if (JSON.stringify(next) !== JSON.stringify(lastData)) { lastData = next; render(next); }
+      } catch (e) {
+        document.getElementById("generated").textContent = "gagal memuat: " + e.message;
+      }
+    }
+
+    // warna ikut tema OS
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => lastData && render(lastData));
+    load();
+    setInterval(load, 30000);
+  </script>
+</body>
+</html>

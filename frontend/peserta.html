@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BPJS Kesehatan — Peserta</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <span class="brand">BPJS Kesehatan · Big Data</span>
+    <nav>
+      <a href="index.html">Beranda</a>
+      <a href="peserta.html">Peserta</a>
+      <a href="faskes.html">Faskes</a>
+      <a href="kunjungan.html">Kunjungan</a>
+      <a href="dashboard.html">Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Peserta JKN</h1>
+    <p class="subtitle">Tulis ke <b>primary</b>, daftar dibaca dari <b>read replica</b>.</p>
+
+    <section class="card">
+      <h2>Tambah Peserta</h2>
+      <form id="f" class="form">
+        <label>No. Kartu (13 digit) <input name="no_kartu" required pattern="\d{13}" inputmode="numeric" /></label>
+        <label>NIK (16 digit) <input name="nik" required pattern="\d{16}" inputmode="numeric" /></label>
+        <label>Nama <input name="nama" required /></label>
+        <label>Tanggal Lahir <input type="date" name="tanggal_lahir" required /></label>
+        <label>Jenis Kelamin
+          <select name="jenis_kelamin"><option value="L">Laki-laki</option><option value="P">Perempuan</option></select>
+        </label>
+        <label>Segmen
+          <select name="segmen"><option>PBI</option><option>PPU</option><option>PBPU</option><option>BP</option></select>
+        </label>
+        <label>Kelas Rawat
+          <select name="kelas_rawat"><option>1</option><option>2</option><option selected>3</option></select>
+        </label>
+        <label>Faskes Tingkat Pertama <select name="faskes_id" id="faskes"><option value="">—</option></select></label>
+        <label>No. HP <input name="no_hp" /></label>
+        <label class="full">Alamat <input name="alamat" /></label>
+        <div class="full"><button type="submit">Simpan</button><div id="msg" class="msg"></div></div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="searchbar">
+        <input type="search" id="q" placeholder="Cari nama / no. kartu…" />
+        <span class="badge" id="total"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>No. Kartu</th><th>Nama</th><th>Tgl Lahir</th><th>JK</th><th>Segmen</th><th class="num">Kelas</th><th>FKTP</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api.js"></script>
+  <script>
+    const rows = document.getElementById("rows");
+    async function load() {
+      const r = await API.get("/peserta", { q: document.getElementById("q").value, limit: 100 });
+      document.getElementById("total").textContent = `${fmtNum(r.total)} peserta · sumber: ${r.source}`;
+      rows.innerHTML = r.items.length
+        ? r.items.map((x) => `<tr><td>${esc(x.no_kartu)}</td><td>${esc(x.nama)}</td><td>${esc(x.tanggal_lahir)}</td>
+            <td>${esc(x.jenis_kelamin)}</td><td>${esc(x.segmen)}</td><td class="num">${esc(x.kelas_rawat)}</td>
+            <td>${esc(x.faskes_terdaftar)}</td></tr>`).join("")
+        : `<tr><td colspan="7" class="empty">Belum ada data</td></tr>`;
+    }
+    async function loadFaskes() {
+      const r = await API.get("/faskes", { limit: 500 });
+      document.getElementById("faskes").innerHTML += r.items
+        .filter((x) => x.tingkat === "FKTP")
+        .map((x) => `<option value="${x.id}">${esc(x.nama)} (${esc(x.kota)})</option>`).join("");
+    }
+    let t;
+    document.getElementById("q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(load, 300); });
+
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const msg = document.getElementById("msg");
+      const body = formData(e.target);
+      body.kelas_rawat = Number(body.kelas_rawat);
+      if (body.faskes_id) body.faskes_id = Number(body.faskes_id);
+      try {
+        const r = await API.post("/peserta", body);
+        setMsg(msg, `Tersimpan: ${r.item.nama} (id ${r.item.id}) di ${r.source}`);
+        e.target.reset();
+        setTimeout(load, 300);
+      } catch (err) { setMsg(msg, err.message, false); }
+    });
+    load(); loadFaskes();
+  </script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Script shell dijalankan di container Linux: wajib LF
+*.sh   text eol=lf
+*.conf text eol=lf
